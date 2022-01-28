@@ -51,7 +51,8 @@
                            :data    (Util/toArray payload)}))
             (finally (.free pooled)))))
       (onClose [^WebSocketChannel websocket-channel ^StreamSourceFrameChannel channel]
-        (.sendClose websocket-channel)
+        (when-not (.isCloseFrameSent websocket-channel)
+          (.sendClose websocket-channel))
         (on-close {:channel    channel
                    :ws-channel websocket-channel}))
       (onCloseMessage [^CloseMessage message ^WebSocketChannel channel]
