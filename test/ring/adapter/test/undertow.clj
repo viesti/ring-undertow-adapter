@@ -151,7 +151,6 @@
       (is (= "Hello!" (deref result 2000 :fail)))))))
 
 (deftest test-org-java-websocket
-  #_
   (testing "org.java-websocket/Java-WebSocket"
     (let [events  (atom [])
           result  (promise)
