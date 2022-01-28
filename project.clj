@@ -8,6 +8,7 @@
   :profiles {:dev     {:dependencies [[org.clojure/clojure "1.10.3"]
                                       [clj-http "3.12.3"]
                                       [stylefruits/gniazdo "1.2.0"]
+                                      [org.java-websocket/Java-WebSocket "1.5.2"]
                                       [metosin/reitit-ring "0.5.15"]
                                       [criterium "0.4.6"]]
                        :source-paths ["dev"]}

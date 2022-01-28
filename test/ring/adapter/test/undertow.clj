@@ -7,7 +7,8 @@
     [clojure.java.io :as io])
   (:import
     [java.nio ByteBuffer]
-    [org.eclipse.jetty.websocket.api Session]))
+    [org.eclipse.jetty.websocket.api Session]
+    [org.java_websocket.client WebSocketClient]))
 
 (def test-port 4347)
 
@@ -129,6 +130,7 @@
                    :on-message (fn [{:keys [data]}]
                                  (swap! events conj data))
                    :on-close   (fn [_]
+                                 (println "on-close")
                                  (deliver result (swap! events conj :close)))}]
       (with-server (websocket-handler ws-opts) {:port test-port}
         (let [socket (gniazdo/connect "ws://localhost:4347/")]
@@ -147,6 +149,83 @@
               socket (gniazdo/connect "ws://localhost:4347/" :on-connect tester)]
           (gniazdo/close socket))
       (is (= "Hello!" (deref result 2000 :fail)))))))
+
+(deftest test-org-java-websocket
+  #_
+  (testing "org.java-websocket/Java-WebSocket"
+    (let [events  (atom [])
+          result  (promise)
+          ws-opts {:on-open    (fn [_]
+                                 (swap! events conj :open))
+                   :on-message (fn [{:keys [data]}]
+                                 (swap! events conj data))
+                   :on-close   (fn [_]
+                                 (println "server on-close")
+                                 (deliver result (swap! events conj :close)))}]
+      (with-server (websocket-handler ws-opts) {:port test-port}
+        (let [socket (proxy [WebSocketClient] [(java.net.URI. "ws://localhost:4347/")]
+                       (onOpen    [^org.java_websocket.handshake.ServerHandshake handshakedata]
+                         (println "client on-open"))
+                       (onError   [ex]
+                         (println "client on-error"   ex))
+                       (onMessage [^String message]
+                         (println "client on-message" message))
+                       (onClose   [code reason remote]
+                         (println "client on-close" code reason)))]
+          (println "constructed")
+          (.connectBlocking socket)
+          (println "connected?")
+          (.send socket "hello")
+          (println "closing")
+          (.closeBlocking socket)
+          (println "closed"))
+        (is (= [:open "hello" :close] (deref result 2000 :fail)))))))
+
+(deftest test-java-net-http-websocket
+  (testing "java.net.http.WebSocket"
+    (let [events  (atom [])
+          result  (promise)
+          foo (atom nil)
+          ws-opts {:on-open    (fn [{:keys [channel]}]
+                                 (reset! foo channel)
+                                 (swap! events conj :open))
+                   :on-message (fn [{:keys [data]}]
+                                 (swap! events conj data))
+                   :on-close   (fn [{:keys [_message channel]}]
+                                 (println "server on-close" channel
+                                          (.sendClose @foo)
+                                          ; (.isCloseFrameReceived channel)
+                                          ; (.isCloseFrameSent channel)
+                                          )
+                                 (deliver result (swap! events conj :close)))}]
+      (with-server (websocket-handler ws-opts) {:port test-port}
+        (let [http-client (java.net.http.HttpClient/newHttpClient)
+              ; latch (java.util.concurrent.CountDownLatch. 1)
+              listener (proxy [java.net.http.WebSocket$Listener] []
+                         (onOpen [^java.net.http.WebSocket ws]
+                           (println "ws opened" ws))
+                         (onText [ws data last]
+                           (println "on-text" data last)
+                           )
+                         (onClose [ws status reason]
+                           (println "!!! client on-close" status reason))
+                         (onError [ws error]
+                           (println "on-error" error)))
+              ws (-> (.newWebSocketBuilder http-client)
+                     (.buildAsync (java.net.URI. "ws://localhost:4347/") listener)
+                     (.join))]
+          (println "connected?")
+          (.sendText ws "hello" true)
+          (println "closing")
+          (-> (.sendClose ws java.net.http.WebSocket/NORMAL_CLOSURE "foo")
+              (.thenRun (fn [] (println "client close message sent")))
+              (.join))
+          (is (true? (.isOutputClosed ws)) "client -> server channel is closed")
+          (is (true? (.isInputClosed ws)) "server -> client channel is closed")
+          )
+        (is (= [:open "hello" :close] (deref result 2000 :fail)))))))
+
+
 
 (def thread-exceptions (atom []))
 
