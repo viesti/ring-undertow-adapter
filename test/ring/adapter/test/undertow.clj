@@ -184,28 +184,19 @@
   (testing "java.net.http.WebSocket"
     (let [events  (atom [])
           result  (promise)
-          foo (atom nil)
-          ws-opts {:on-open    (fn [{:keys [channel]}]
-                                 (reset! foo channel)
+          ws-opts {:on-open    (fn [_]
                                  (swap! events conj :open))
                    :on-message (fn [{:keys [data]}]
                                  (swap! events conj data))
-                   :on-close   (fn [{:keys [_message channel]}]
-                                 (println "server on-close" channel
-                                          (.sendClose @foo)
-                                          ; (.isCloseFrameReceived channel)
-                                          ; (.isCloseFrameSent channel)
-                                          )
+                   :on-close   (fn [_]
                                  (deliver result (swap! events conj :close)))}]
       (with-server (websocket-handler ws-opts) {:port test-port}
         (let [http-client (java.net.http.HttpClient/newHttpClient)
-              ; latch (java.util.concurrent.CountDownLatch. 1)
               listener (proxy [java.net.http.WebSocket$Listener] []
                          (onOpen [^java.net.http.WebSocket ws]
                            (println "ws opened" ws))
-                         (onText [ws data last]
-                           (println "on-text" data last)
-                           )
+                         (onText [ws data last?]
+                           (println "on-text" data last?))
                          (onClose [ws status reason]
                            (println "!!! client on-close" status reason))
                          (onError [ws error]
@@ -217,14 +208,11 @@
           (.sendText ws "hello" true)
           (println "closing")
           (-> (.sendClose ws java.net.http.WebSocket/NORMAL_CLOSURE "foo")
-              (.thenRun (fn [] (println "client close message sent")))
+              (.thenRun (fn []
+                          (println "client close message sent")))
               (.join))
-          (is (true? (.isOutputClosed ws)) "client -> server channel is closed")
-          (is (true? (.isInputClosed ws)) "server -> client channel is closed")
-          )
+          (is (true? (.isOutputClosed ws)) "client -> server channel is closed"))
         (is (= [:open "hello" :close] (deref result 2000 :fail)))))))
-
-
 
 (def thread-exceptions (atom []))
 
